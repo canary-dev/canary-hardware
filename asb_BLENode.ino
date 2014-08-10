@@ -18,7 +18,7 @@ All text above, and the splash screen below must be included in any redistributi
 #include <SPI.h>
 #include "Adafruit_BLE_UART.h"
 #include "DHT.h"
-
+#include "COS_MQ7.h"
 #include "asb_UARTInterface.h"
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +40,16 @@ All text above, and the splash screen below must be included in any redistributi
 // Setup Pins for VUMeter/
 #define VUMETER_RST_PIN    (7)
 #define VUMETER_ANALOG_PIN (A0)
+
+// Pin definitions for carbon monixide sensor
+#define ACTIVE_MONOX_PIN 6
+#define READ_MONOX_PIN A4
+#define READ_COPSV_PIN A3
+#define ACTIVE_MONOX_LED_PIN A2
+
+// create CO sensor object
+// Last parameter is the duration of initial purge in seconds, negative value sets to default 500 seconds
+COS_MQ7 MQ7(ACTIVE_MONOX_LED_PIN, ACTIVE_MONOX_PIN, READ_MONOX_PIN, READ_COPSV_PIN, -1);
 
 // Initialize Global variables.
 Adafruit_BLE_UART uart = Adafruit_BLE_UART(ADAFRUITBLE_REQ, ADAFRUITBLE_RDY, ADAFRUITBLE_RST);
@@ -75,18 +85,23 @@ uint16_t asb_uartGetTemperature() {
 
 uint16_t asb_uartGetHumidity() {
   float h = dht.readHumidity();
+  
   #ifdef __DEBUG__
   Serial.println(h);
   #endif
+  
   return (h/100)*0xffff;
 }
 
 uint16_t asb_uartGetVU() {
-  return 0x3f;
+  return vumeter_value;
 }
 
+static uint16_t CO_value = 0;
+static uint8_t CO_valid = 0;
+
 uint16_t asb_uartGetCO() {
-  return 0xb3ef;
+  return CO_value;
 }
 
 uint16_t asb_uartGetCH4() {
@@ -146,14 +161,15 @@ void rxcallback(uint8_t *buffer, uint8_t len)
   }
   Serial.println(F(" ]"));
   #endif
+  
   for (uint8_t i = 0; i < len; i++) {
     if (buffer[i] == 'u') {
       sprintf((char*)txBuf, "%04x,%04x,%04x,%04x", 
                             asb_uartGetTemperature(),
                             asb_uartGetHumidity(),
-                            vumeter_value,
-                            asb_uartGetCH4());      
-
+                            asb_uartGetVU(),
+                            asb_uartGetCO());      
+      CO_valid = 0;
       uart.write(txBuf,strlen((char *)txBuf));
     } else if (buffer[i] == 'a') {
       uart.write((uint8_t *)"a", 1);    
@@ -195,8 +211,26 @@ void loop()
 ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
 {
   static uint8_t counter = 0;
+  static uint16_t co_counter = 0;
   static uint16_t vumeter_filter = 0;
- 
+  if (co_counter == 510) {
+    co_counter = 0;
+    MQ7.Power_cycle();
+    
+      Serial.print(MQ7.Get_state());
+  Serial.print(',');
+  Serial.print(MQ7.Get_Voltage_reading());
+  Serial.print(',');
+  Serial.println(MQ7.Get_current_CO_reading());
+    // Only record 'good' reading
+    if(MQ7.Get_state() == 4) {
+      CO_valid = 1;
+      CO_value = MQ7.Get_CO_reading();
+    }
+
+  } else {
+    co_counter++;
+  }
   if (counter == 200) {
     vumeter_value = vumeter_filter;
     vumeter_filter = 0;
