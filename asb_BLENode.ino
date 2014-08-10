@@ -23,23 +23,46 @@ All text above, and the splash screen below must be included in any redistributi
 #include <stdlib.h>
 #include <string.h>
 #define __VERSION__ "v0.1"
-#define __DEBUG__
+//#define __DEBUG__
 
+// BLE Device Pins
 #define ADAFRUITBLE_REQ 10
 #define ADAFRUITBLE_RDY 3
 #define ADAFRUITBLE_RST 9
 
+// Setup DHT Humidity and Temperature Sensor
 #define DHTPIN 2
 #define DHTTYPE DHT11
 #define MAX_TEMP 50.0 //deg C
 #define MIN_TEMP 0 //deg C
-
 #define MAX_TEMP_INTVALUE 0xffff //deg C
+
+// Setup Pins for VUMeter/
+#define VUMETER_RST_PIN    (7)
+#define VUMETER_ANALOG_PIN (A0)
 
 // Initialize Global variables.
 Adafruit_BLE_UART uart = Adafruit_BLE_UART(ADAFRUITBLE_REQ, ADAFRUITBLE_RDY, ADAFRUITBLE_RST);
 DHT dht(DHTPIN, DHTTYPE); 
+uint16_t vumeter_value = 0;
 
+void setupVUMeter() {
+  pinMode(VUMETER_RST_PIN, OUTPUT);
+  digitalWrite(VUMETER_RST_PIN,LOW);
+  
+  // Setup Timer Interrupts on Timer 1
+  // initialize timer1 
+  noInterrupts();           // disable all interrupts
+  TCCR1A = 0;
+  TCCR1B = 0;
+  TCNT1  = 0;
+
+  OCR1A = 31250;            // compare match register 16MHz/256/2Hz
+  TCCR1B |= (1 << WGM12);   // CTC mode
+  TCCR1B |= (1 << CS10);    // 256 prescaler 
+  TIMSK1 |= (1 << OCIE1A);  // enable timer compare interrupt
+  interrupts();             // enable all interrupts
+}
 
 uint16_t asb_uartGetTemperature() {
   float t = dht.readTemperature(); // deg C
@@ -123,19 +146,12 @@ void rxcallback(uint8_t *buffer, uint8_t len)
   }
   Serial.println(F(" ]"));
   #endif
-  
   for (uint8_t i = 0; i < len; i++) {
     if (buffer[i] == 'u') {
-      
-      asb_uartGetHumidity();
-      asb_uartGetVU();
-      asb_uartGetCO();
-      uint8_t *txBuf_ptr = txBuf;
-      
-      sprintf((char*)txBuf, "%d,%d,%d,%d", 
+      sprintf((char*)txBuf, "%04x,%04x,%04x,%04x", 
                             asb_uartGetTemperature(),
                             asb_uartGetHumidity(),
-                            asb_uartGetVU(),
+                            vumeter_value,
                             asb_uartGetCH4());      
 
       uart.write(txBuf,strlen((char *)txBuf));
@@ -155,7 +171,8 @@ void setup(void)
 { 
   Serial.begin(9600);
   while(!Serial); // Leonardo/Micro should wait for serial init
- 
+  setupVUMeter();
+  
   #ifdef __DEBUG__
   Serial.println(F("Adafruit Bluefruit Low Energy nRF8001 Callback Echo demo"));
   #endif
@@ -174,3 +191,21 @@ void loop()
 {
   uart.pollACI();
 }
+
+ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
+{
+  static uint8_t counter = 0;
+  static uint16_t vumeter_filter = 0;
+ 
+  if (counter == 200) {
+    vumeter_value = vumeter_filter;
+    vumeter_filter = 0;
+    digitalWrite(VUMETER_RST_PIN, HIGH);
+  } else if (counter < 200) {
+    digitalWrite(VUMETER_RST_PIN, LOW);
+    vumeter_filter = ((uint16_t)analogRead(VUMETER_ANALOG_PIN) + (uint16_t)vumeter_filter)/2;
+
+  }
+  counter++;
+}
+
