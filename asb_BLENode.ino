@@ -17,6 +17,8 @@ All text above, and the splash screen below must be included in any redistributi
 
 #include <SPI.h>
 #include "Adafruit_BLE_UART.h"
+#include "DHT.h"
+
 #include "asb_UARTInterface.h"
 #include <stdlib.h>
 #include <string.h>
@@ -27,20 +29,33 @@ All text above, and the splash screen below must be included in any redistributi
 #define ADAFRUITBLE_RDY 3
 #define ADAFRUITBLE_RST 9
 
-Adafruit_BLE_UART uart = Adafruit_BLE_UART(ADAFRUITBLE_REQ, ADAFRUITBLE_RDY, ADAFRUITBLE_RST);
-
+#define DHTPIN 2
+#define DHTTYPE DHT11
 #define MAX_TEMP 50.0 //deg C
 #define MIN_TEMP 0 //deg C
 
 #define MAX_TEMP_INTVALUE 0xffff //deg C
+
+// Initialize Global variables.
+Adafruit_BLE_UART uart = Adafruit_BLE_UART(ADAFRUITBLE_REQ, ADAFRUITBLE_RDY, ADAFRUITBLE_RST);
+DHT dht(DHTPIN, DHTTYPE); 
+
+
 uint16_t asb_uartGetTemperature() {
-  float t = 25.0; // deg C
+  float t = dht.readTemperature(); // deg C
+  #ifdef __DEBUG__
+  Serial.println(t);
+  #endif
+
   return ((t-MIN_TEMP)/(MAX_TEMP-MIN_TEMP)) * (MAX_TEMP_INTVALUE);
 }
 
 uint16_t asb_uartGetHumidity() {
-  float humidity = 40.0;
-  return (humidity/100)*0xffff;
+  float h = dht.readHumidity();
+  #ifdef __DEBUG__
+  Serial.println(h);
+  #endif
+  return (h/100)*0xffff;
 }
 
 uint16_t asb_uartGetVU() {
@@ -117,11 +132,10 @@ void rxcallback(uint8_t *buffer, uint8_t len)
       asb_uartGetCO();
       uint8_t *txBuf_ptr = txBuf;
       
-      sprintf((char*)txBuf, "%04x,%04x,%04x,%04x,%04x;", 
+      sprintf((char*)txBuf, "%d,%d,%d,%d", 
                             asb_uartGetTemperature(),
                             asb_uartGetHumidity(),
                             asb_uartGetVU(),
-                            asb_uartGetCO(),
                             asb_uartGetCH4());      
 
       uart.write(txBuf,strlen((char *)txBuf));
