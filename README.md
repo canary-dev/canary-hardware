@@ -1,4 +1,4 @@
-# asb_BLENode
+# Canary Hardware Repository
 
 Uses adafruits BLE UART library as a basis and the nRF8001 BLE shield. 
 
