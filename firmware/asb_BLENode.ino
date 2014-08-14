@@ -47,6 +47,7 @@ All text above, and the splash screen below must be included in any redistributi
 #define READ_COPSV_PIN A3
 #define ACTIVE_MONOX_LED_PIN A2
 
+// RL = 10.0kOhms
 // create CO sensor object
 // Last parameter is the duration of initial purge in seconds, negative value sets to default 500 seconds
 COS_MQ7 MQ7(ACTIVE_MONOX_LED_PIN, ACTIVE_MONOX_PIN, READ_MONOX_PIN, READ_COPSV_PIN, -1);
